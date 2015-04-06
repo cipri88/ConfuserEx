@@ -82,6 +82,18 @@
     </Compile>
     <Compile Include="Constants\Mode.cs" />
     <Compile Include="Constants\NormalMode.cs" />
+    <Compile Include="LocalVirtualization\BlockParser.cs" />
+    <Compile Include="LocalVirtualization\Blocks.cs" />
+    <Compile Include="LocalVirtualization\CFContext.cs" />
+    <Compile Include="LocalVirtualization\LocalVirtualizationsPhase.cs" />
+    <Compile Include="LocalVirtualization\LocalVirtualizationProtection.cs" />
+    <Compile Include="LocalVirtualization\ExpressionPredicate.cs" />
+    <Compile Include="LocalVirtualization\IPredicate.cs" />
+    <Compile Include="LocalVirtualization\JumpMangler.cs" />
+    <Compile Include="LocalVirtualization\ManglerBase.cs" />
+    <Compile Include="LocalVirtualization\NormalPredicate.cs" />
+    <Compile Include="LocalVirtualization\SwitchMangler.cs" />
+    <Compile Include="LocalVirtualization\x86Predicate.cs" />
     <Compile Include="ControlFlow\CFContext.cs" />
     <Compile Include="ControlFlow\ControlFlowPhase.cs" />
     <Compile Include="ControlFlow\ControlFlowProtection.cs" />

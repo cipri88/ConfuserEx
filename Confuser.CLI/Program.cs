@@ -63,8 +63,11 @@ namespace Confuser.CLI {
 					// Generate a ConfuserProject for input modules
 					// Assuming first file = main module
 					var proj = new ConfuserProject();
-					foreach (var input in files)
-						proj.Add(new ProjectModule { Path = input });
+				    foreach (var input in files)
+				    {
+                        proj.Add(new ProjectModule { Path = input });
+				    }
+						
 					proj.BaseDirectory = Path.GetDirectoryName(files[0]);
 					proj.OutputDirectory = outDir;
 					parameters.Project = proj;
