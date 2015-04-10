@@ -1,4 +1,6 @@
 ﻿using System;
+using System.CodeDom;
+using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
 using Confuser.Core;
@@ -9,12 +11,20 @@ using dnlib.DotNet;
 using dnlib.DotNet.Emit;
 using dnlib.DotNet.MD;
 using dnlib.DotNet.Writer;
+using dnlib.Threading;
 
 namespace Confuser.Protections.LocalVirtualization
 {
 	internal class LocalVirtualiztionPhase : ProtectionPhase {
 		static readonly JumpMangler Jump = new JumpMangler();
 		static readonly SwitchMangler Switch = new SwitchMangler();
+
+        static readonly string VPC_VO = "vpc_vo";
+        static readonly string OPCODE_VO = "opcode_vo";
+        static readonly string DATA_VO = "data_vo";
+
+	    private Dictionary<int, Instruction> dataInstructions;
+        private Dictionary<int, Instruction> dataFiltered;
 
 		public LocalVirtualiztionPhase(LocalVirtualizationProtection parent)
 			: base(parent) { }
@@ -88,16 +98,168 @@ namespace Confuser.Protections.LocalVirtualization
 			return Jump;
 		}
 
+        	    
+
+        private int InitVirtualProgramCounter(CilBody body, CFContext ctx, int insertIndex)
+        {
+            //add local variable
+            Local vpcVariable = new Local(ctx.Context.CurrentModule.CorLibTypes.UInt32);
+            vpcVariable.Name = VPC_VO;
+            body.Variables.Locals.Add(vpcVariable);        
+
+            //init vpc
+            body.Instructions.Insert(insertIndex+0, Instruction.CreateLdcI4(-1));
+            body.Instructions.Insert(insertIndex+1, OpCodes.Stloc.ToInstruction(vpcVariable));
+
+            body.Instructions.Insert(insertIndex + 2, OpCodes.Ldloc.ToInstruction(vpcVariable));
+            body.Instructions.Insert(insertIndex + 3, OpCodes.Pop.ToInstruction());
+
+            int instructionsInserted = 4;
+            return instructionsInserted;
+        }
+
+        private int InitVirtualizationData(CilBody body, CFContext ctx, int insertIndex)
+        {
+            // Create an int[]           
+            SZArraySig objArray = new SZArraySig(ctx.Context.CurrentModule.CorLibTypes.Object);
+            Local virtData = new Local(objArray);
+            virtData.Name = DATA_VO;
+            body.Variables.Locals.Add(virtData);
+            
+            int initialIndex = insertIndex;
+            int opCodeSize = 200;
+            body.Instructions.Insert(insertIndex++, Instruction.CreateLdcI4(opCodeSize));
+            body.Instructions.Insert(insertIndex++, Instruction.Create(OpCodes.Newarr, ctx.Context.CurrentModule.CorLibTypes.Object));
+            body.Instructions.Insert(insertIndex++, OpCodes.Stloc.ToInstruction(virtData));
+
+            //add dummy data
+//            body.Instructions.Insert(insertIndex++, OpCodes.Ldloc.ToInstruction(virtData));
+//            body.Instructions.Insert(insertIndex++, Instruction.CreateLdcI4(0)); //index
+//            body.Instructions.Insert(insertIndex++, Instruction.CreateLdcI4(opCodeSize+2)); //value
+//            body.Instructions.Insert(insertIndex++, Instruction.Create(OpCodes.Stelem_I4));
+
+            int instructionsInserted = insertIndex - initialIndex;
+            return instructionsInserted;
+        }
+
+        private int initVirtualizationOpcode(CilBody body, CFContext ctx, int insertIndex)
+        {
+            // Create an int[]
+            SZArraySig intArray = new SZArraySig(ctx.Context.CurrentModule.CorLibTypes.UInt32);
+            Local opCode = new Local(intArray);
+            opCode.Name = OPCODE_VO;
+            body.Variables.Locals.Add(opCode);
+
+            int initialIndex = insertIndex;
+            int opCodeSize = 100;
+            body.Instructions.Insert(insertIndex++, Instruction.CreateLdcI4(opCodeSize));
+            body.Instructions.Insert(insertIndex++, Instruction.Create(OpCodes.Newarr, ctx.Context.CurrentModule.CorLibTypes.UInt32));
+            body.Instructions.Insert(insertIndex++, OpCodes.Stloc.ToInstruction(opCode));
+
+//            body.Instructions.Insert(insertIndex++, OpCodes.Ldloc.ToInstruction(opCode));
+//            body.Instructions.Insert(insertIndex++, Instruction.CreateLdcI4(0)); //index
+//            body.Instructions.Insert(insertIndex++, Instruction.CreateLdcI4(opCodeSize+1)); //value
+//            body.Instructions.Insert(insertIndex++, Instruction.Create(OpCodes.Stelem_I4));
+
+            int instructionsInserted = insertIndex - initialIndex;            
+            return instructionsInserted;
+        }
+
+
+        private Dictionary<int, Instruction> initVirtualizationData(CilBody body, CFContext ctx)
+	    {
+            Dictionary<int, Instruction> variables  = new Dictionary<int, Instruction>();
+            Dictionary<int, Instruction> equivalentInstructions = new Dictionary<int, Instruction>();
+	        int position = 0;
+	        int instructionIndex = 0;
+	        foreach(var instr in body.Instructions)
+	        {
+	            if(!filterInstruction(instr))
+                    continue;
+
+                var instructionExists = equivalentInstructions.Where(_ => (instr.Equivalent(_.Value)));	            
+                if (!instructionExists.Any())
+	            {
+                    equivalentInstructions.Add(instructionIndex, instr);
+                    instructionIndex++;
+	            }
+                variables.Add(position++, instr);
+	            
+	        }
+
+            Debug.WriteLine("variables: "+ variables.Count);
+            dataInstructions = variables;
+            dataFiltered = equivalentInstructions;
+
+            PopulateVirtualizationData(body, ctx);
+            replaceInstruction(body, ctx);
+
+            return variables;
+	    }
+
+        private void PopulateVirtualizationData(CilBody body, CFContext ctx)
+        {
+            int insertIndex = 0;
+            Local virtData = body.Variables.Locals.FirstOrDefault(_ => DATA_VO.Equals(_.Name));            
+                       
+            foreach (var pair in dataFiltered)
+            {
+                var instr = pair.Value;
+                int virtDataIndex = pair.Key;
+                body.Instructions.Insert(insertIndex++, OpCodes.Ldloc.ToInstruction(virtData));
+                body.Instructions.Insert(insertIndex++, Instruction.CreateLdcI4(virtDataIndex)); //index                
+                body.Instructions.Insert(insertIndex++, instr); //value
+                body.Instructions.Insert(insertIndex++, Instruction.Create(OpCodes.Stelem_Ref));                
+            }
+        }
+
+	    private bool filterInstruction(Instruction instruction)
+	    {
+	        if (instruction.OpCode.isLoadString())
+                return true;
+	        //if (instruction.OpCode.isLoadConstant())
+	            //return true;
+	        return false;
+	    }
+
+        private void replaceInstruction(CilBody body, CFContext ctx)
+        {
+            Local virtData = body.Variables.Locals.FirstOrDefault(_ => DATA_VO.Equals(_.Name));
+            var instructionList = body.Instructions;
+            foreach (var pair in dataInstructions)
+            {
+                int position = instructionList.IndexOf(pair.Value) + 1;
+                instructionList.Insert(position++,Instruction.Create(OpCodes.Pop));
+
+                instructionList.Insert(position++, OpCodes.Ldloc.ToInstruction(virtData));
+                var filteredPair = dataFiltered.FirstOrDefault(_ => pair.Value.Equivalent(_.Value));
+                var dataKey = filteredPair.Key;
+                instructionList.Insert(position++, OpCodes.Ldc_I4.ToInstruction(dataKey));
+                instructionList.Insert(position++, Instruction.Create(OpCodes.Ldelem_Ref));
+            }
+	    }
+
 		void ProcessMethod(CilBody body, CFContext ctx) {
 			uint maxStack;
-			if (!MaxStackCalculator.GetMaxStack(body.Instructions, body.ExceptionHandlers, out maxStack)) {
-				ctx.Context.Logger.Error("Failed to calcuate maxstack.");
-				throw new ConfuserException(null);
-			}
-			body.MaxStack = (ushort)maxStack;
+            int instructionsInserted = 0;
+
+            instructionsInserted += initVirtualizationOpcode(body, ctx, instructionsInserted);
+            instructionsInserted += InitVirtualizationData(body, ctx, instructionsInserted);
+
+            initVirtualizationData(body, ctx);
+
+            instructionsInserted += InitVirtualProgramCounter(body, ctx, instructionsInserted);
+            
+
+//			if (!MaxStackCalculator.GetMaxStack(body.Instructions, body.ExceptionHandlers, out maxStack)) {
+//				ctx.Context.Logger.Error("Failed to calcuate maxstack.");
+//				throw new ConfuserException(null);
+//			}
+			//body.MaxStack = (ushort)maxStack;
+            body.MaxStack = 8;
 			ScopeBlock root = BlockParser.ParseBody(body);
 
-			GetMangler(ctx.Type).Mangle(body, root, ctx);
+			//GetMangler(ctx.Type).Mangle(body, root, ctx);
 
 			body.Instructions.Clear();
 			root.ToBody(body);

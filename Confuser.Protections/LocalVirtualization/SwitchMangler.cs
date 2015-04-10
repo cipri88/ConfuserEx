@@ -7,7 +7,9 @@ using dnlib.DotNet.Emit;
 
 namespace Confuser.Protections.LocalVirtualization
 {
-	internal class SwitchMangler : ManglerBase {
+	internal class SwitchMangler : ManglerBase
+	{
+        
 		LinkedList<Instruction[]> SpiltStatements(InstrBlock block, MethodTrace trace, CFContext ctx) {
 			var statements = new LinkedList<Instruction[]>();
 			var currentStatement = new List<Instruction>();
@@ -63,6 +65,7 @@ namespace Confuser.Protections.LocalVirtualization
 
 		public override void Mangle(CilBody body, ScopeBlock root, CFContext ctx) {
 			MethodTrace trace = ctx.Context.Registry.GetService<ITraceService>().Trace(ctx.Method);
+		                     
 
 			body.MaxStack += 2;
 			IPredicate predicate = null;

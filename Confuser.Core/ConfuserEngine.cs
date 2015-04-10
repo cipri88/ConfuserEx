@@ -403,7 +403,10 @@ namespace Confuser.Core {
 		static void SaveModules(ConfuserContext context) {
 			context.Resolver.Clear();
 			for (int i = 0; i < context.OutputModules.Count; i++) {
-				string path = Path.GetFullPath(Path.Combine(context.OutputDirectory, context.OutputPaths[i]));
+                //TODO: remove in production
+                string timestamp = DateTime.Now.ToString("yyyy-MM-dd_HH-mm-ss");
+
+                string path = Path.GetFullPath(Path.Combine(context.OutputDirectory, timestamp+"-"+context.OutputPaths[i]));
 				string dir = Path.GetDirectoryName(path);
 				if (!Directory.Exists(dir))
 					Directory.CreateDirectory(dir);
